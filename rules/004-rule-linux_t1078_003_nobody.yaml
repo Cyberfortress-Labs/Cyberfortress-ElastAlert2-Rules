@@ -1,0 +1,187 @@
+# ==============================
+# Rule: ART | T1078.003-11 | Login as nobody (Elastic Endpoint)
+# Author: Thiên @ CyberFortress
+# Description:
+#   Detects when the "su" process is executed with argument "nobody"
+#   (indicating possible use of low-privilege account for evasion or persistence)
+#   Correlates Linux endpoint telemetry from Elastic Agent.
+# ==============================
+
+name: ART - Login as nobody
+type: any
+index: ".ds-logs-*"
+
+filter:
+  - bool:
+      must:
+        - match_phrase: { agent.type: "endpoint" }
+        - match_phrase: { event.category: "process" }
+        - match_phrase: { process.executable: "/usr/bin/su" }
+      should:
+        - wildcard: { process.command_line: "*nobody*" }
+      minimum_should_match: 1
+
+tags:
+  - linux
+  - endpoint
+  - initial-access
+  - mitre_attack:T1078.003
+  - source:ART
+priority: 2
+
+# =======================
+# ALERTING CHANNELS
+# =======================
+alert:
+  - "email"
+  - "iris"
+
+# =======================
+# EMAIL CONFIG
+# =======================
+email_subject: "[Elastic Defend] - Login as 'nobody' detected on {0}"
+email_subject_args:
+  - host.hostname
+
+
+
+alert_subject: "[Elastic Defend] - Login as 'nobody' detected on {0}"
+alert_subject_args:
+  - host.hostname
+alert_text_type: alert_text_only
+alert_text: |
+  [MITRE ATT&CK] T1078.003 - Valid Accounts (Local Accounts)
+  [Atomic Test] T1078.003-11 - Login as 'nobody'
+  [Tactic] Initial Access / Defense Evasion
+
+  Host: {0}
+  Executable: {1}
+  Command Line: {2}
+  User: {3}
+  Exit Code: {4}
+  PID: {5}
+  Parent Process: {6}
+  Timestamp: {7}
+
+alert_text_args:
+  - host.hostname
+  - process.executable
+  - process.command_line
+  - user.name
+  - process.exit_code
+  - process.pid
+  - process.parent.command_line
+  - "@timestamp"
+
+query_key: ["host.hostname"]
+realert:
+  minutes: 10
+
+# =======================
+# IRIS CONFIG - Individual Case Creation Mode
+# =======================
+iris_type: alert                           # Tạo case mới cho mỗi detection
+iris_customer_id: 1
+iris_alert_tags: "MITRE:T1078.003, InitialAccess, ValidAccounts, Linux, Endpoint, SuNobody"
+iris_ignore_ssl_errors: true                       # Bỏ qua SSL errors
+iris_overwrite_timestamp: true                     # Dùng timestamp của event
+
+
+# Static description without args
+iris_description: |
+  MITRE ATT&CK T1078.003 - Valid Accounts: Local Accounts
+  
+  ## DETECTION METADATA
+  Attack Type: Account Abuse
+  MITRE Technique: T1078.003 - Valid Accounts (Local)
+  MITRE Tactic: Initial Access / Defense Evasion / Persistence
+  Alert Family: Linux Endpoint Security
+  Rule Category: Process Execution Monitoring
+  Target Process: /usr/bin/su (switch user utility)
+  Target Account: nobody (low-privilege service account)
+  
+  ## ATTACK ANALYSIS
+  Detection: Process "/usr/bin/su" executed with argument "nobody"
+  This behavior may indicate:
+  - Adversary switching to low-privilege "nobody" account
+  - Privilege escalation attempt using service accounts
+  - Defense evasion through legitimate system accounts
+  - Persistence mechanism via service account abuse
+  
+  ## INVESTIGATION STEPS 
+  1. Analyze process execution tree and parent processes
+  2. Review user activity and authentication patterns
+  3. Check system access patterns and file operations
+  4. Correlate with other endpoint security events
+  
+  See Context section for runtime execution details (Host, Command, User, PID, etc).
+
+# Static alert note  
+iris_alert_note: |
+  === LINUX ENDPOINT DETECTION ===
+  Detection Rule: ART T1078.003-11 - Login as nobody
+  Data Source: Elastic Security Endpoint Agent
+  Process Executable: /usr/bin/su
+  Target Account: nobody
+  Event Category: Process Execution
+  
+  === MITRE ATT&CK MAPPING ===
+  Technique: T1078.003 - Valid Accounts (Local Accounts)
+  Tactics: Initial Access, Defense Evasion, Persistence
+  
+  === TECHNICAL DETAILS ===
+  Agent Type: Elastic Security Endpoint
+  Detection Method: Process command line monitoring
+  Alert Severity: Medium Risk
+  
+  See Context for detailed process execution information.
+
+
+
+# Context fields - chỉ các fields có trong match data
+iris_alert_context:
+  hostname: host.hostname
+  command_line: process.command_line
+  executable_path: process.executable
+  parent_command: process.parent.command_line
+  parent_executable: process.parent.executable
+  user_name: user.name
+  process_id: process.pid
+  parent_pid: process.parent.pid
+  event_timestamp: "@timestamp"
+  agent_id: agent.id
+  host_ip: host.ip
+  event_action: event.action
+  process_args_count: process.args_count
+
+# =======================
+# IOC SECTION (chuẩn cho MISP)
+# =======================
+iris_iocs:
+  # Hostname IOC
+  - ioc_value: host.hostname
+    ioc_description: "Linux host executing suspicious 'su nobody' command"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 69                                 # hostname/domain type
+    ioc_tags: "hostname, linux, endpoint, t1078.003, initial-access"
+  
+  # Command line IOC  
+  - ioc_value: process.command_line
+    ioc_description: "Suspicious command line switching to nobody account"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 135                                 # command line type
+    ioc_tags: "command-line, su, nobody, linux, evasion"
+  
+  # Process executable IOC
+  - ioc_value: process.executable
+    ioc_description: "Process executable path involved in account switching"
+    ioc_tlp_id: 2                                   # Amber TLP  
+    ioc_type_id: 97                                 # filepath
+    ioc_tags: "executable, su, linux, system-binary"
+  
+  # Username IOC
+  - ioc_value: user.name
+    ioc_description: "User context initiating switch to nobody account"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 3                                  # username type
+    ioc_tags: "username, linux, account-switch"

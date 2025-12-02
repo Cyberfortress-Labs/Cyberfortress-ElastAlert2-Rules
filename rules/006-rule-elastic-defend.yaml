@@ -1,0 +1,155 @@
+# ================================================
+# Rule name: Elastic Defend - Malware Outbreak Detection
+# Author: Thiên's CyberFortress
+# Description:
+#   Phát hiện khi Elastic Defend tạo ra nhiều cảnh báo mã độc
+#   trên cùng một host trong khoảng thời gian ngắn (mặc định 2 alerts/15 phút).
+#   VERSION 2: Now captures file hashes.
+# ================================================
+
+name: Elastic Defend - Malware Outbreak Detection
+type: frequency
+index: ".ds-logs-elastic_agent.endpoint_security*" 
+
+# Rule sẽ kích hoạt nếu có 2 hoặc nhiều hơn các event khớp
+# trên cùng một host trong vòng 15 phút.
+num_events: 2
+timeframe:
+  minutes: 15
+
+# Gom nhóm các event theo tên của host bị ảnh hưởng.
+query_key: host.name
+filter:
+  - bool:
+      filter:
+        - term:
+            data_stream.dataset: "elastic_agent.endpoint_security*"
+        - bool:
+            should:
+              - match_phrase:
+                  message: "Sending alert for"
+              - match_phrase:
+                  message: "Successfully quarantined file"
+            minimum_should_match: 1
+
+# =======================
+# DEDUPE / NOISE CONTROL
+# =======================
+realert:
+  minutes: 30
+
+# =======================
+# ALERT DESTINATIONS
+# =======================
+alert:
+  - "email"
+  - "iris"
+
+priority: 2 # Mức độ ưu tiên cao hơn (1=Critical, 2=High)
+tags: ["elastic_defend", "endpoint", "malware", "ransomware", "mitre_attack:T1204.002", "EDR"]
+
+
+
+# =======================
+# EMAIL CONFIG
+# =======================
+email_subject: "[Elastic Defend] - Malware Outbreak Detected on {0}"
+email_subject_args:
+  - host.name
+alert_subject: "[Elastic Defend] - Malware Outbreak Detected on {0}"
+alert_subject_args:
+  - agent.name
+
+alert_text_type: alert_text_only
+alert_text: |
+  [MITRE ATT&CK] T1204.002 - User Execution: Malicious File
+  [Detection] Elastic Defend phát hiện nhiều mã độc trên cùng một host.
+
+  Hostname: {0}
+  OS: {1}
+  Total Detections: {2}
+  Timeframe: {3}
+
+  Message: {5}
+  @timestamp: {6}
+
+alert_text_args:
+  - host.name
+  - host.os.name.text
+  - num_matches
+  - timeframe
+  - message
+  - "@timestamp"
+  - host.ip
+
+
+# =======================
+# IRIS CONFIG (theo docs chính thức)
+# =======================
+iris_type: alert
+iris_ignore_ssl_errors: true
+iris_overwrite_timestamp: true
+
+# Basic alert configuration
+iris_alert_source: "ElastAlert2"
+iris_alert_source_link: "https://siem.cyberfortress.local/kibana/app/discover"
+iris_alert_severity_id: 2 # 2 = High severity
+iris_alert_status_id: 2
+iris_alert_tags: "MITRE:T1204.002, Malware, Ransomware, ElasticDefend, EDR, UserExecution"
+
+# Alert description
+iris_description: |
+  # [Elastic Defend] - Potential Malware Outbreak
+  
+  Elastic Defend EDR detected multiple malware alerts for host.
+  ## This behavior pattern may indicate:
+  - A user repeatedly attempting to run a malicious file.
+  - An active malware infection dropping multiple malicious payloads.
+  - A potential ransomware outbreak in its early stages.
+  - User Execution of a malicious file (MITRE T1204.002).
+  
+  **Immediate investigation of the host is required.**
+
+iris_description_args:
+  - host.name
+  - host.ip
+
+# Alert note với thông tin chi tiết
+iris_alert_note: |
+  EDR System: Elastic Defend
+  Detection Engine: Malware Prevention
+  Alert Pattern: Multiple Malware Detections
+
+iris_alert_note_args:
+  - message
+  - host.name
+  - host.os.name.text
+  - host.ip
+  - "@timestamp"
+
+# Context fields để IRIS có thể correlate
+iris_alert_context:
+  hostname: host.name
+  host_ip: host.ip
+  os: host.os.name.text
+  message: message
+  detection_timestamp: "@timestamp"
+
+# =======================
+# IOC SECTION (chuẩn cho MISP)
+# =======================
+# iris_iocs:
+#   # Hostname IOC
+#   - ioc_value: host.name
+#     ioc_description: "Hostname with multiple malware detections by Elastic Defend"
+#     ioc_tlp_id: 2 # Amber TLP
+#     ioc_type_id: 11 # hostname type in Iris
+#     ioc_tags: "hostname, victim, elastic-defend, malware, edr-alert, t1204"
+
+#   # Host IP IOC
+#   - ioc_value: host.ip
+#     ioc_description: "IP address of host with multiple malware detections"
+#     ioc_tlp_id: 2 # Amber TLP
+#     ioc_type_id: 79 # IP address type
+#     ioc_tags: "ip-dst, victim, elastic-defend, malware, edr-alert, t1204"
+

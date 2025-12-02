@@ -1,0 +1,163 @@
+# ================================================
+# Rule name: Wazuh AR - Malicious File Removed
+# Author: Thiên's CyberFortress
+# Description:
+#   Tạo cảnh báo khi Wazuh Active Response thực thi thành công
+#   kịch bản xóa file độc hại (remove-threat.sh)
+#   sau khi có phát hiện từ VirusTotal.
+# ================================================
+
+name: Wazuh - Malicious File Removed
+type: any
+index: "wazuh-alerts-4.x-*"
+
+# Lọc chính xác các cảnh báo có rule ID 100092,
+# là ID cho việc kịch bản active response xóa file thành công.
+filter:
+  - term:
+      rule.id: "100092"
+
+# =======================
+# DEDUPE / NOISE CONTROL
+# =======================
+realert:
+  minutes: 5
+
+# =======================
+# ALERT DESTINATIONS
+# =======================
+alert:
+  - "email"
+  - "iris"
+
+priority: 2 # High Priority
+tags: ["wazuh", "active_response", "virustotal", "malware", "prevention", "mitre_attack:T1203"]
+
+
+
+# =======================
+# EMAIL CONFIG
+# =======================
+email_subject: "[Wazuh] - Malicious File Removed on {0}"
+email_subject_args:
+  - agent.name
+alert_subject: "[Wazuh] - Malicious File Removed on {0}"
+alert_subject_args:
+  - agent.name
+alert_text_type: alert_text_only
+alert_text: |
+  [MITRE ATT&CK] T1203 - Exploitation for Client Execution
+  [Detection] Wazuh Active Response has automatically removed a malicious file.
+
+  Agent Name: {0}
+  Agent IP: {1}
+  File Path Removed: {2}
+  File Hash (MD5): {3}
+  File Hash (SHA1): {4}
+  VirusTotal Detections: {5} / {6}
+  VT Permalink: {7}
+  @timestamp: {8}
+
+alert_text_args:
+  - agent.name
+  - agent.ip
+  - data.parameters.alert.data.virustotal.source.file
+  - data.parameters.alert.data.virustotal.source.md5
+  - data.parameters.alert.data.virustotal.source.sha1
+  - data.parameters.alert.data.virustotal.positives
+  - data.parameters.alert.data.virustotal.total
+  - data.parameters.alert.data.virustotal.permalink
+  - "@timestamp"
+
+# =======================
+# IRIS CONFIG (theo docs chính thức)
+# =======================
+iris_type: alert
+iris_ignore_ssl_errors: true
+iris_overwrite_timestamp: true
+
+# Basic alert configuration
+iris_alert_source: "ElastAlert2"
+iris_alert_source_link: "https://siem.cyberfortress.local/kibana/app/discover"
+iris_alert_severity_id: 2 # 2 = High severity
+iris_alert_status_id: 2
+iris_alert_tags: "MITRE:T1203, Wazuh, ActiveResponse, Malware, Prevention, VirusTotal"
+
+# Alert description
+iris_description: |
+  # [Wazuh] - Malicious File Automatically Removed
+
+  Wazuh Active Response automatically removed a malicious file after it was identified by VirusTotal.
+
+  ## This indicates:
+  - A malicious file was present on the endpoint.
+  - The automated prevention mechanism worked successfully.
+  - **Investigation is required** to determine the initial access vector (how the file got there).
+
+iris_description_args:
+  - agent.name
+  - agent.ip
+
+# Alert note với thông tin chi tiết
+iris_alert_note: |
+  Detection System: Wazuh
+  Action Taken: Automated File Removal
+
+
+iris_alert_note_args:
+  - rule_ids_system
+  - data.parameters.alert.data.virustotal.source.file
+  - data.parameters.alert.data.virustotal.positives
+  - data.parameters.alert.data.virustotal.total
+
+# Context fields để IRIS có thể correlate
+iris_alert_context:
+  agent_name: agent.name
+  agent_ip: agent.ip
+  file_path: data.parameters.alert.data.virustotal.source.file
+  md5_hash: data.parameters.alert.data.virustotal.source.md5
+  sha1_hash: data.parameters.alert.data.virustotal.source.sha1
+  vt_positives: data.parameters.alert.data.virustotal.positives
+  vt_permalink: data.parameters.alert.data.virustotal.permalink
+  detection_timestamp: "@timestamp"
+  response_system: rule_ids_system
+
+# =======================
+# IOC SECTION (chuẩn cho MISP)
+# =======================
+iris_iocs:
+  # Agent Hostname IOC
+  - ioc_value: agent.name
+    ioc_description: "Hostname where Wazuh AR removed a malicious file"
+    ioc_tlp_id: 2
+    ioc_type_id: 69
+    ioc_tags: "hostname, victim, wazuh, active-response"
+
+  # Agent IP IOC
+  - ioc_value: agent.ip
+    ioc_description: "IP address of host where Wazuh AR removed a malicious file"
+    ioc_tlp_id: 2
+    ioc_type_id: 79
+    ioc_tags: "ip-dst, victim, wazuh, active-response"
+
+  # File Path IOC
+  - ioc_value: data.parameters.alert.data.virustotal.source.file
+    ioc_description: "Full path of the malicious file removed by Wazuh AR"
+    ioc_tlp_id: 2
+    ioc_type_id: 37
+    ioc_tags: "file-path, malware, victim-artifact, wazuh"
+
+  # MD5 Hash IOC
+  - ioc_value: data.parameters.alert.data.virustotal.source.md5
+    ioc_description: "MD5 hash of the malicious file removed by Wazuh AR"
+    ioc_tlp_id: 2
+    ioc_type_id: 90
+    ioc_tags: "md5, file-hash, malware, virustotal"
+
+  # SHA1 Hash IOC
+  - ioc_value: data.parameters.alert.data.virustotal.source.sha1
+    ioc_description: "SHA1 hash of the malicious file removed by Wazuh AR"
+    ioc_tlp_id: 2
+    ioc_type_id: 111
+    ioc_tags: "sha1, file-hash, malware, virustotal"
+

@@ -1,0 +1,170 @@
+# ==============================
+# Rule name: ModSecurity - SQL Injection Attack Detected
+# Author: Thiên's CyberFortress
+# Description:
+#   Alert khi ModSecurity phát hiện tấn công SQL Injection
+#   dựa vào ruleId 942100 hoặc message chứa từ khóa "SQL Injection"
+# ==============================
+
+name: ModSecurity - SQL Injection Attack Detected
+type: any
+index: ".ds-logs-modsecurity.auditlog-*"
+
+
+filter:
+  - bool:
+      filter: # Mệnh đề AND chính
+        - term:
+            event.module: "modsecurity"
+        - bool: # Mệnh đề OR lồng nhau
+            should:
+              - term:
+                  modsec.audit.details.details.ruleId: "942100"
+              - match:
+                  modsec.audit.messages: "SQL"
+              - match:
+                  modsec.audit.messages: "Injection"
+            minimum_should_match: 1
+
+# =======================
+# DEDUPE / NOISE CONTROL
+# =======================
+query_key: source.ip
+realert:
+  minutes: 5
+
+# =======================
+# ALERT DESTINATION
+# =======================
+alert:
+  - "email"
+  - "iris"
+
+priority: 3
+tags: ["web", "waf", "modsecurity", "sql-injection", "mitre_attack:T1190", "source:ModSecurity"]
+
+# =======================
+# EMAIL CONFIG
+# =======================
+email_subject: "[ModSecurity] - SQL Injection Detected from {0}"
+email_subject_args:
+  - source.ip
+
+# Alert subject cho IRIS title
+alert_subject: "[ModSecurity] - SQL Injection Attack from {0}"
+alert_subject_args:
+  - source.ip
+
+alert_text_type: alert_text_only
+alert_text: |
+  [MITRE ATT&CK] T1190 - Exploit Public-Facing Application
+  [Detection] SQL Injection attack detected by ModSecurity WAF.
+
+  Source IP: {0}
+  Target URL: {1}
+  Message: {2}
+  HTTP Status: {3}
+  Timestamp: {4}
+
+alert_text_args:
+  - source.ip
+  - url.original
+  - modsec.audit.messages
+  - http.response.status_code
+  - "@timestamp"
+
+# =======================
+# IRIS CONFIG - Merge all SQL injection alerts into one case
+# =======================
+iris_type: alert 
+iris_alert_tags: "MITRE:T1190, WebAttack, SQLInjection, ModSecurity, WAF"
+iris_ignore_ssl_errors: true                       # Bỏ qua SSL errors
+iris_overwrite_timestamp: true                     # Dùng timestamp của event
+
+# Alert description với static metadata embedded
+iris_description: |
+  # [ModSecurity] - SQL Injection Detected
+  
+  ## DETECTION METADATA
+  - WAF System: ModSecurity
+  - Attack Type: SQL Injection
+  - MITRE Technique: T1190
+  - MITRE Tactic: Initial Access
+  - Alert Family: ModSecurity WAF
+  - Rule Category: Web Security
+  - Target Rule ID: 942100 (or SQL/Injection keyword match)
+
+  ## ATTACK ANALYSIS
+  ModSecurity Web Application Firewall detected SQL Injection attack attempt.
+  This attack pattern indicates:
+  - SQL injection exploitation attempt (MITRE T1190)
+  - Database enumeration or data exfiltration attempt
+  - Web application vulnerability exploitation
+  - Potential compromise of web application backend
+
+  ## INVESTIGATION STEPS
+  1. Review web application logs for payload details
+  2. Check database activity during attack timeframe  
+  3. Verify authentication bypass attempts
+  4. Analyze attack progression and lateral movement
+  
+  See Context section for runtime attack data (IP, URL, WAF Messages, HTTP Status).
+
+# Alert note với metadata đầy đủ
+iris_alert_note: |
+  === TECHNICAL DETAILS ===
+  WAF System: ModSecurity
+  Attack Type: SQL Injection
+  Rule ID: 942100 (or SQL/Injection keyword match)
+  Attack Vector: SQL Injection
+  Application Layer: HTTP/HTTPS
+  Severity: High Risk
+  
+  === MITRE ATT&CK MAPPING ===
+  Technique: T1190 - Exploit Public-Facing Application
+  Tactic: Initial Access
+  
+  === CLASSIFICATION ===
+  Alert Family: ModSecurity WAF
+  Rule Category: Web Security
+  Detection Type: Signature-based + Anomaly scoring
+  
+  === DATA SOURCES ===
+  - ModSecurity Audit Logs
+  - HTTP Request/Response data
+  - WAF Rule Engine output
+  
+  See Context for runtime attack details extracted from logs.
+
+# Context fields - với static merge key
+iris_alert_context:
+  attacker_ip: source.ip
+  target_url: url.original
+  waf_message: modsec.audit.messages
+  http_status: http.response.status_code
+  detection_timestamp: "@timestamp"
+  event_module: event.module
+  rule_id_field: modsec.audit.details.details.ruleId
+  
+# Add static field for case merging
+add_fields:
+  case_merge_key: "sql_injection_campaign"    # Static value cho merge
+
+
+# =======================
+# IOC SECTION (chuẩn cho MISP)
+# =======================
+iris_iocs:
+  # Attacker IP IOC - sử dụng type riêng biệt
+  - ioc_value: source.ip
+    ioc_description: "Source IP attempting SQL injection attack against web application"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 79                                 # IP address type (khác với rule khác)
+    ioc_tags: "ip-src, sql-injection, web-attack, modsecurity, waf-block, t1190"
+  
+  # Target URL IOC
+  - ioc_value: url.original
+    ioc_description: "Target URL of SQL injection attack attempt"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 141                                 # URL type
+    ioc_tags: "url, target, sql-injection, web-application, vulnerable-endpoint"

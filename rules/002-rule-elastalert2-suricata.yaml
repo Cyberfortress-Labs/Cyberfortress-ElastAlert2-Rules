@@ -1,0 +1,158 @@
+# ================================================
+# Rule name: Suricata - ET SCAN Volume by Source IP
+# Author: Thiên's CyberFortress
+# Description:
+#   Phát hiện khi Suricata log ra nhiều cảnh báo ET SCAN
+#   trong khoảng thời gian ngắn (mặc định 3 alerts/10 phút)
+# ================================================
+
+name: Suricata - ET SCAN Volume
+type: frequency
+index: ".ds-logs-suricata.eve*"
+
+num_events: 3
+timeframe:
+  minutes: 10
+query_key: source.ip
+
+filter:
+  - bool:
+      filter: # Sử dụng 'filter' context để có hiệu suất tốt nhất (không tính điểm, có cache)
+        - term:
+            event.dataset: "suricata.eve"
+        - term:
+            event.kind: "alert"
+        - bool: # Đây là một bool query lồng nhau để xử lý logic (A OR B)
+            should:
+              - wildcard:
+                  suricata.eve.alert.signature.keyword: "ET SCAN Nmap*"
+              - term:
+                  suricata.eve.alert.signature_id: 2009358
+            minimum_should_match: 1
+
+# =======================
+# DEDUPE / NOISE CONTROL
+# =======================
+realert:
+  minutes: 10
+
+# =======================
+# ALERT DESTINATIONS
+# =======================
+alert:
+  - "email"
+  - "iris"
+
+priority: 3
+tags: ["suricata", "network", "scan", "mitre_attack:T1046", "source:ET", "IDS"]
+
+# =======================
+# EMAIL CONFIG
+# =======================
+email_subject: "[Suricata] - ET SCAN Volume Detected from {0}"
+email_subject_args:
+  - source.ip
+
+alert_subject: "[Suricata] - ET SCAN Volume Detected from {0}"
+alert_subject_args:
+  - source.ip
+alert_text_type: alert_text_only
+alert_text: |
+  [MITRE ATT&CK] T1046 - Network Service Scanning
+  [Detection] Suricata phát hiện nguồn IP tạo nhiều cảnh báo ET SCAN.
+
+  Source IP: {0}
+  Total Alerts: {1}
+  Timeframe: {2}
+
+  Signature Example: {3}
+  @timestamp: {4}
+
+alert_text_args:
+  - source.ip
+  - num_matches
+  - timeframe
+  - suricata.eve.alert.signature
+  - "@timestamp"
+
+
+# =======================
+# IRIS CONFIG (theo docs chính thức)
+# =======================
+iris_type: alert                                    # Tạo alert
+iris_ignore_ssl_errors: true                       # Bỏ qua SSL errors
+iris_overwrite_timestamp: true                     # Dùng timestamp của event
+
+# Basic alert configuration
+iris_alert_source: "ElastAlert2"                   # Nguồn alert
+iris_alert_source_link: "https://siem.cyberfortress.local/kibana/app/discover"
+iris_alert_severity_id: 4                          # 4 = Medium severity
+iris_alert_status_id: 2                            # 2 = New status
+iris_alert_tags: "MITRE:T1046, NetworkScan, Suricata, ET, IDS, Discovery"
+
+# Alert description
+iris_description: |
+  # [Suricata] - Network Service Discovery
+  
+  Suricata IDS detected multiple ET SCAN alerts from source IP.
+  ## This behavior pattern indicates:
+  - Network service scanning (MITRE T1046)
+  - Port enumeration activities
+  - Reconnaissance phase of cyber attack
+  - Potential threat actor mapping network infrastructure
+  
+  Investigate: Network topology discovery, service fingerprinting, attack progression
+
+
+# Alert note với thông tin chi tiết
+iris_alert_note: |
+  IDS System: Suricata
+  Ruleset: Emerging Threats (ET)
+  Alert Pattern: ET SCAN signatures
+  Threshold: 3+ alerts in 10 minutes
+
+iris_alert_note_args:
+  - source.ip
+  - num_matches
+  - timeframe
+  - suricata.eve.alert.signature
+  - "@timestamp"
+  - rule.category
+  - observer.product
+  - observer.ip
+
+
+# Context fields để IRIS có thể correlate
+iris_alert_context:
+  source_ip: source.ip
+  signature: suricata.eve.alert.signature
+  signature_id: suricata.eve.alert.signature_id
+  rule_category: rule.category
+  alert_count: num_matches
+  time_window: timeframe
+  detection_timestamp: "@timestamp"
+  ids_system: observer.product
+  ids_system_ip: observer.ip
+
+
+
+# =======================
+# IOC SECTION (chuẩn cho MISP)
+# =======================
+iris_iocs:
+  # Source IP IOC
+  - ioc_value: source.ip
+    ioc_description: "Source IP triggering multiple Suricata ET SCAN alerts"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 79                                 # IP address type
+    ioc_tags: "ip-src, network-scan, suricata, et-scan, ids-alert, t1046"
+  
+  # Signature IOC (nếu có pattern cụ thể)
+  - ioc_value: suricata.eve.alert.signature
+    ioc_description: "Suricata signature detecting scanning behavior"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 35                                 # signature/rule type
+    ioc_tags: "signature, suricata, et-scan, network-discovery"
+
+# Case template nếu cần
+iris_case_template_id: 1

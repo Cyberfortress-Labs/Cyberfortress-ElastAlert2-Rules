@@ -1,0 +1,122 @@
+name: pfSense Firewall - High Volume of Events
+type: frequency
+index: ".ds-logs-pfsense.log-*"
+
+num_events: 80
+timeframe:
+  minutes: 20
+
+query_key: source.ip
+
+filter:
+  - bool:
+      filter: # Các điều kiện AND
+        - term:
+            event.dataset: "pfsense.log"
+        - term:
+            network.direction: "inbound"
+        - term:
+            action: "blocked"
+        - terms: # Dùng "terms" cho (A OR B OR C) - hiệu quả hơn nhiều
+            network.transport: ["tcp", "udp", "icmp"]
+      must_not:
+        - range:
+            source.ip:
+              gte: "192.168.0.0"
+              lte: "192.168.255.255"
+        - range:
+            source.ip:
+              gte: "10.0.0.0"
+              lte: "10.255.255.255"
+        - range:
+            source.ip:
+              gte: "172.16.0.0"
+              lte: "172.31.255.255"
+        - terms:
+            source.ip: ["127.0.0.1", "169.254.169.254", "255.255.255.255"]
+
+cardinality_field: destination.port
+min_cardinality: 10
+
+realert:
+  hours: 4
+
+alert:
+  - "email"
+  - "iris"
+
+email_subject: "[pfSense] {0} high volume events from {1}"
+email_subject_args: [num_matches, source.ip]
+
+alert_text_type: alert_text_only
+alert_text: |
+  IP {0} tạo >= {1} events trong {2}.
+alert_text_args: [source.ip, num_matches, timeframe]
+
+
+
+# =======================
+# IRIS CONFIG (theo docs chính thức)
+# =======================
+iris_type: alert                                    # Tạo alert
+iris_ignore_ssl_errors: true                       # Bỏ qua SSL errors
+iris_overwrite_timestamp: true                     # Dùng timestamp của event
+
+# Basic alert configuration
+iris_alert_source: "ElastAlert2"  # Nguồn alert
+iris_customer_id: 1
+iris_alert_tags: "NetworkScan, pfSense, Firewall, HighVolume, MITRE:T1046"
+
+# Case grouping strategy - gom các events từ cùng IP trong 24h
+iris_case_merge: true
+iris_case_merge_key: "source.ip" 
+iris_case_merge_timeframe: "24h"
+
+# Static description (không dùng args)
+iris_description: |
+  # pfSense Firewall - High Volume Network Events Detection
+  
+  Multiple high-volume network events detected from same source IP.
+  ## This pattern may indicate:
+  - Network scanning activity (MITRE T1046)
+  - Port scanning or service enumeration
+  - Potential reconnaissance phase of attack
+  - Misconfigured network services
+  
+  DATA SOURCE: pfSense Firewall Logs
+  DETECTION TYPE: Frequency-based (50+ events/30min)
+  CASE STRATEGY: Group by source IP within 24-hour window
+  
+  See Context section for detailed event metrics.
+
+# Static note
+iris_alert_note: |
+  === PFSENSE FIREWALL DETECTION ===
+  Detection Rule: pfSense High Volume Events
+  Data Source: pfSense Firewall Logs
+  Network Protocols: TCP/UDP/ICMP
+  Threshold: 50+ events in 30 minutes
+  Case Management: Grouped by source IP (24h window)
+
+# Context fields để IRIS có thể correlate
+iris_alert_context:
+  source_ip: source.ip
+  event_count: num_matches
+  time_window: timeframe
+  detection_type: "high_volume_network_events"
+  data_source: "pfsense_firewall"
+  rule_category: "network_monitoring"
+  alert_family: "pfsense_firewall"
+  mitre_technique: "T1046"
+  mitre_tactic: "Discovery"
+
+# =======================
+# IOC SECTION (chuẩn cho MISP)  
+# =======================
+iris_iocs:
+  # Source IP IOC - sử dụng type khác với rule 004
+  - ioc_value: source.ip
+    ioc_description: "Source IP generating high volume network events on firewall"
+    ioc_tlp_id: 2                                   # Amber TLP
+    ioc_type_id: 1                                  # IP address (khác với rule 004)
+    ioc_tags: "ip-src, network-scan, pfsense, firewall, high-volume, t1046, frequency-alert"
