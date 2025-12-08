@@ -1,0 +1,170 @@
+# ================================================
+# Rule name: Suricata - ML High-Risk Alerts by Source IP
+# Author: Thiên's CyberFortress
+# Description:
+#   Phát hiện các alert Suricata đã được ML phân loại là WARNING/ERROR
+#   với xác suất cao, lặp lại nhiều lần từ cùng một source IP
+#   (mặc định: >= 3 alerts / 10 phút / 1 source.ip)
+# ================================================
+
+name: Suricata - ML High-Risk Alerts
+type: frequency
+index: ".ds-logs-suricata.eve*"
+
+# Số lượng events tối thiểu trong khoảng thời gian
+num_events: 1
+timeframe:
+  minutes: 10
+
+# Gom theo IP nguồn
+query_key: source.ip
+
+# =======================
+# FILTER CONDITIONS
+# =======================
+filter:
+  - bool:
+      filter:
+        # Chỉ lấy Suricata eve logs
+        - term:
+            event.dataset: "suricata.eve"
+        - term:
+            event.kind: "alert"
+        - term:
+            suricata.eve.event_type: "alert"
+
+        # Chỉ lấy những log đã qua ML classification
+        - exists:
+            field: "ml.prediction.predicted_value"
+
+        # Chỉ quan tâm WARNING / ERROR
+        - terms:
+            ml.prediction.predicted_value:
+              - "WARNING"
+              - "ERROR"
+
+        # Chỉ lấy những event có probability đủ cao (ví dụ >= 0.7)
+        - range:
+            ml.prediction.prediction_probability:
+              gte: 0.7
+
+# =======================
+# DEDUPE / NOISE CONTROL
+# =======================
+realert:
+  minutes: 10
+
+# =======================
+# ALERT DESTINATIONS
+# =======================
+alert:
+  - "email"
+  - "iris"
+  - "telegram"
+
+priority: 3
+tags: ["suricata", "network", "ml", "classification", "ids", "cyberfortress"]
+
+# =======================
+# EMAIL CONFIG
+# =======================
+email_subject: "[Suricata][ML] High-Risk Alerts from {0} ({1})"
+email_subject_args:
+  - source.ip
+  - ml.prediction.predicted_value
+
+# =======================
+# ALERT CONTENT CONFIG
+# =======================
+alert_subject: "[Suricata][ML] High-Risk Alerts from {0} ({1})"
+alert_subject_args:
+  - source.ip
+  - ml.prediction.predicted_value
+
+alert_text_type: alert_text_only
+alert_text: |
+  # [ML Classification] Suricata alert được ML phân loại là {1} (prob ~ {2}).
+  
+  * Nguồn: https://elastic.cyberfortress.local/kibana/app/discover#/?_g=(time:(from:now-7d,to:now))&_a=(columns:!(ml_input,ml.prediction.predicted_value,ml.prediction.prediction_probability),dataSource:(dataViewId:'86e2db59-ca78-4a83-9008-8b69acc21a28',type:dataView),filters:!(),interval:auto,query:(language:kuery,query:'source.ip:"{0}" and (ml.prediction.predicted_value:"WARNING" or ml.prediction.predicted_value:"ERROR") and ml.prediction.prediction_probability >= 0.7'))
+
+  * Source IP: {0}
+  * Rule: {3} (ID: {4})
+  * IDS: {5} ({6})
+
+  * Aggregated Alerts: {7} events trong {8}
+  * First event @timestamp: {9}
+
+  * Normalized message (ml_input):
+  {10}
+
+alert_text_args:
+  - source.ip                                  # {0}
+  - ml.prediction.predicted_value              # {1}
+  - ml.prediction.prediction_probability       # {2}
+  - rule.name                                  # {3}
+  - rule.id                                    # {4}
+  - observer.product                           # {5}
+  - observer.hostname                          # {6}
+  - num_matches                                # {7}
+  - timeframe                                  # {8}
+  - "@timestamp"                               # {9}
+  - ml_input                                   # {10}
+
+
+# =======================
+# IRIS CONFIG
+# =======================
+iris_type: alert
+iris_ignore_ssl_errors: true
+iris_overwrite_timestamp: true
+
+iris_alert_source: "ElastAlert2-ML"
+iris_alert_severity_id: 4             # Medium (có thể nâng lên 5 nếu muốn coi WARNING/ERROR là cao)
+iris_alert_status_id: 2               # New
+iris_alert_tags: "ML, Suricata, IDS, High-Risk, WARNING, ERROR"
+
+
+iris_alert_note: |
+  Detection Engine: Suricata + ML Classification
+  Dataset: suricata.eve
+
+
+# Context để IRIS correlate / hiển thị đẹp
+iris_alert_context:
+  source_ip: source.ip
+  destination_ip: destination.ip
+  source_port: source.port
+  destination_port: destination.port
+  rule_name: rule.name
+  rule_id: rule.id
+  rule_category: rule.category
+  ml_predicted_value: ml.prediction.predicted_value
+  ml_prediction_probability: ml.prediction.prediction_probability
+  ml_model_id: ml.prediction.model_id
+  ml_input: ml_input
+  detection_timestamp: "@timestamp"
+  ids_system: observer.product
+  ids_system_ip: observer.ip
+  event_severity: event.severity
+
+# =======================
+# IOC SECTION (chuẩn cho MISP)
+# =======================
+iris_iocs:
+  # Source IP IOC
+  - ioc_value: source.ip
+    ioc_description: "Source IP với nhiều Suricata alerts được ML phân loại WARNING/ERROR"
+    ioc_tlp_id: 2
+    ioc_type_id: 79
+    ioc_tags: "ip-src, suricata, ml-high-risk, ids-alert"
+
+  # Destination IP IOC
+  - ioc_value: destination.ip
+    ioc_description: "Destination IP liên quan đến Suricata ML high-risk alerts"
+    ioc_tlp_id: 2
+    ioc_type_id: 79
+    ioc_tags: "ip-dst, suricata, ml-high-risk, ids-alert"
+
+
+# Optional: case template nếu bạn dùng IRIS templates
+# iris_case_template_id: 1
