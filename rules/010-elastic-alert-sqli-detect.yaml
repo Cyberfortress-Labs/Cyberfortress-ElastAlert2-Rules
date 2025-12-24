@@ -1,0 +1,205 @@
+# ================================================
+# Rule name: Escalate - Web SQLi Blocked (ModSecurity + ML) -> IRIS
+# Target Index: .internal.alerts-security.alerts-*
+# ================================================
+
+name: Web Application Suspicious Activity Detection with ModSecurity
+type: frequency
+index: ".alerts-security.alerts-*"
+
+
+num_events: 1
+timeframe:
+  minutes: 10
+
+# Gom nhóm theo attacker IP để chống spam (mỗi IP 1 case/alert trong khoảng thời gian)
+query_key: source.ip
+
+# =======================
+# FILTER CONDITIONS
+# =======================
+
+filter:
+  - query:
+      query_string:
+        query: "kibana.alert.rule.parameters.rule_id: \"c33c8134-cea0-40ed-9ff5-1739c8811fea\""
+        
+
+        # Optional: bám sát điều kiện rule gốc (để tránh signal bị biến tấu)
+        # - term:
+        #     data_stream.dataset: "modsecurity.auditlog"
+        # - term:
+        #     http.response.status_code: 403
+        # - term:
+        #     ml.prediction.predicted_value: "WARNING"
+        # - range:
+        #     ml.prediction.prediction_probability:
+        #       gte: 0.7
+
+        # Optional: ruleId CRS SQLi signature (libinjection SQLi)
+        # - term:
+        #     modsec.audit.details.details.ruleId: "942100"
+
+      # Optional: whitelist vài IP pentest nội bộ nếu cần
+      # must_not:
+      #   - terms:
+      #       source.ip:
+      #         - "192.168.95.10"
+
+# =======================
+# OPTIONS
+# =======================
+realert:
+  minutes: 5
+
+alert_missing_value: "N/A"
+
+# =======================
+# ALERT CONTENT CONFIG
+# =======================
+alert_subject: "Web Application Suspicious Activity Detection with ModSecurity"
+alert_subject_args:
+  - source.ip
+
+alert_text_type: alert_text_only
+alert_text: |
+  # [Elastic Security] Web SQL Injection Blocked (ModSecurity + ML)
+
+  ## Overview
+  * **Use Case:** Web SQLi (ModSecurity CRS 942100) + ML classification
+  * **Source IP:** {0}
+  * **Rule Name:** {2}
+  * **Reason:** {3}
+  * **Severity / Risk:** {4} / {5}
+  * **Time:** {6}
+
+  ## Kibana Links
+  * **Alert View:** {7}
+  * **Data View (Discover Pivot):** https://elastic.cyberfortress.local/kibana/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:60000),time:(from:now-1h,to:now))&_a=(dataSource:(dataViewId:'4e1c74b2-73a6-41ed-9770-67940dc40879',type:dataView),columns:!('source.ip','url.domain','url.path','url.query','http.response.status_code','modsec.audit.details.details.ruleId','ml_input','ml.prediction.predicted_value','ml.prediction.prediction_probability'),filters:!(),interval:auto,query:(language:kuery,query:'data_stream.dataset:"modsecurity.auditlog" and source.ip:"{0}"'),sort:!(!('@timestamp',desc)))
+  ## Primary Entity
+  * **source.ip:** {0}
+  * **source.port:** {1}
+
+  ## Attack Context
+  * **HTTP method:** {13}
+  * **HTTP status:** {9}
+  * **url.domain:** {14}
+  * **url.path:** {8}
+  * **url.query:** {15}
+  * **User-Agent:** {16}
+
+  ## ModSecurity / CRS Context
+  * **Matched messages:** {17}
+  * **CRS ruleId:** {10}
+
+  ## ML Analysis
+  * **ml_input:** {18}
+  * **predicted_value:** {11}
+  * **prediction_probability:** {12}
+  * **model_id:** {19}
+
+alert_text_args:
+  - source.ip                              # {0}
+  - source.port                            # {1}
+
+  - kibana.alert.rule.name                 # {2}
+  - kibana.alert.reason                    # {3}
+  - kibana.alert.severity                  # {4}
+  - kibana.alert.risk_score                # {5}
+  - "@timestamp"                           # {6}
+
+  - kibana.alert.url                       # {7}
+
+  - url.path                               # {8}
+  - http.response.status_code              # {9}
+  - modsec.audit.details.details.ruleId    # {10}
+  - ml.prediction.predicted_value          # {11}
+  - ml.prediction.prediction_probability   # {12}
+
+  - http.request.method                    # {13}
+  - url.domain                             # {14}
+  - url.query                              # {15}
+  - user_agent.original                    # {16}
+  - modsec.audit.messages                  # {17}
+
+  - ml_input                               # {18}
+  - ml.prediction.model_id                 # {19}
+
+# =======================
+# ALERT DESTINATIONS
+# =======================
+alert:
+  - "iris"
+
+# =======================
+# IRIS CONFIG
+# =======================
+iris_type: alert
+iris_ignore_ssl_errors: true
+iris_overwrite_timestamp: true
+
+iris_alert_source: "Elastic-Security-Escalation"
+iris_alert_source_link: kibana.alert.url
+
+# Medium (bạn có thể nâng lên High nếu muốn)
+iris_alert_severity_id: 3
+iris_alert_status_id: 2
+iris_alert_tags: "Web, SQLi, ModSecurity, Elastic-Security, ML"
+
+iris_alert_note: |
+  Escalated from Elastic Security signal index.
+  Elastic Rule ID: ba57cb5c-40fa-4411-bb32-b52edd68c3d6
+  Detection: ModSecurity CRS 942100 (SQLi) + status_code=403 + ML predicted_value=WARNING (prob>=0.7)
+
+iris_alert_context:
+  source_ip: source.ip
+  source_port: source.port
+
+  url_domain: url.domain
+  url_path: url.path
+  url_query: url.query
+  http_method: http.request.method
+  http_status: http.response.status_code
+
+  modsec_messages: modsec.audit.messages
+  crs_rule_id: modsec.audit.details.details.ruleId
+
+  ml_input: ml_input
+  ml_predicted_value: ml.prediction.predicted_value
+  ml_prediction_probability: ml.prediction.prediction_probability
+  ml_model_id: ml.prediction.model_id
+
+  kibana_rule_name: kibana.alert.rule.name
+  kibana_reason: kibana.alert.reason
+  kibana_alert_url: kibana.alert.url
+  kibana_severity: kibana.alert.severity
+  kibana_risk_score: kibana.alert.risk_score
+  timestamp: "@timestamp"
+
+# =======================
+# IOC SECTION
+# =======================
+iris_iocs:
+  - ioc_value: source.ip
+    ioc_description: "Attacker IP (SQLi attempt)"
+    ioc_tlp_id: 2
+    ioc_type_id: 79
+    ioc_tags: "ip-src, attacker, web"
+
+  - ioc_value: url.original
+    ioc_description: "Target URL (SQLi payload)"
+    ioc_tlp_id: 2
+    ioc_type_id: 141
+    ioc_tags: "url, web, sqli"
+
+  - ioc_value: url.domain
+    ioc_description: "Target domain"
+    ioc_tlp_id: 2
+    ioc_type_id: 141
+    ioc_tags: "domain, web"
+
+  - ioc_value: url.query
+    ioc_description: "Target path"
+    ioc_tlp_id: 2
+    ioc_type_id: 135
+    ioc_tags: "path, web"

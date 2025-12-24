@@ -1,0 +1,149 @@
+# ================================================
+# Rule name: Escalate - Potential Network Scan (Suricata + ML)
+# Target Index: .internal.alerts-security.alerts-*
+# ================================================
+
+name: Potential Network Scan Detected with Suricata
+type: frequency
+index: ".internal.alerts-security.alerts-*"
+
+num_events: 1
+timeframe:
+  minutes: 10
+
+# Gom nhóm theo IP nguồn (chống spam theo attacker)
+query_key: source.ip
+
+# =======================
+# FILTER CONDITIONS
+# =======================
+filter:
+  - bool:
+      filter:
+        - term:
+            kibana.alert.rule.rule_id: "f4acdbb1-89f6-4106-8002-5e71c5c4eeb6"
+
+        # Optional: khóa thêm rule name (ok để lại)
+        - match_phrase:
+            kibana.alert.rule.name: "Potential Network Scan Detected with Suricata"
+
+        # Optional: chỉ lấy signal của Security
+        - term:
+            event.kind: "signal"
+
+      must_not:
+        - terms:
+            source.ip:
+              - "192.168.100.128"
+              - "192.168.100.138"
+              - "192.168.100.148"
+              - "192.168.100.158"
+              - "192.168.100.171"
+              - "192.168.100.1"
+              - "192.168.100.2"
+              - "192.168.85.1"
+              - "192.168.85.2"
+
+# =======================
+# OPTIONS
+# =======================
+realert:
+  minutes: 5
+
+alert_missing_value: "N/A"
+
+# =======================
+# ALERT CONTENT CONFIG
+# =======================
+alert_subject: "Potential Network Scan Detected with Suricata"
+alert_subject_args:
+  - source.ip
+
+alert_text_type: alert_text_only
+alert_text_type: alert_text_only
+alert_text: |
+  # [Elastic Security] Potential Network Scan Detected with Suricata
+
+
+  ## Overview
+  * **Use Case:** Potential Network Scan (Suricata + ML)
+  * **Rule Name:** {2}
+  * **Reason:** {3}
+  * **Time:** {4}
+
+  ## Kibana Links
+  * **Alert View:** {5}
+  * **Data View (Discover Pivot):** https://elastic.cyberfortress.local/kibana/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:60000),time:(from:now/d,to:now))&_a=(dataSource:(dataViewId:'4a80ee25-52fa-4649-bf6b-3ba36c111205',type:dataView),columns:!('source.ip','destination.ip','ml_input','ml.prediction.predicted_value','ml.prediction.prediction_probability'),filters:!(),interval:auto,query:(language:kuery,query:'source.ip:"{0}" and destination.ip:"{1}" and (ml.prediction.predicted_value:"WARNING" or ml.prediction.predicted_value:"ERROR") and ml.prediction.prediction_probability >= 0.7'),sort:!(!('@timestamp',desc)))
+
+
+  ## Primary Entity
+  * **source.ip:** {0}
+  * **destination.ip:** {1}
+
+  ## ML Analysis
+  * **ml_input:** {6}
+  * **predicted_value:** {7}
+  * **prediction_probability:** {8}
+
+alert_text_args:
+  - source.ip
+  - destination.ip
+  - kibana.alert.rule.name
+  - kibana.alert.reason
+  - "@timestamp"
+  - kibana.alert.url
+  - ml_input
+  - ml.prediction.predicted_value
+  - ml.prediction.prediction_probability
+
+
+# =======================
+# ALERT DESTINATIONS
+# =======================
+alert:
+  - "iris"
+
+# =======================
+# IRIS CONFIG
+# =======================
+iris_type: alert
+iris_ignore_ssl_errors: true
+iris_overwrite_timestamp: true
+
+iris_alert_source: "Elastic-Security-Escalation"
+iris_alert_source_link: kibana.alert.url
+
+iris_alert_severity_id: 3
+iris_alert_status_id: 2
+iris_alert_tags: "Network-Scan, Suricata, Elastic-Security, ML"
+
+iris_alert_note: |
+  Original Alert from Elastic Security.
+  Rule ID: f4acdbb1-89f6-4106-8002-5e71c5c4eeb6
+  Discover pivot URL included in alert body.
+
+iris_alert_context:
+  source_ip: source.ip
+  destination_ip: destination.ip
+  kibana_rule_name: kibana.alert.rule.name
+  kibana_reason: kibana.alert.reason
+  kibana_alert_url: kibana.alert.url
+  ml_input: ml_input
+  ml_prediction: ml.prediction.predicted_value
+  ml_probability: ml.prediction.prediction_probability
+
+# =======================
+# IOC SECTION
+# =======================
+iris_iocs:
+  - ioc_value: source.ip
+    ioc_description: "Source IP Scanner"
+    ioc_tlp_id: 2
+    ioc_type_id: 79
+    ioc_tags: "ip-src, scanner"
+
+  - ioc_value: destination.ip
+    ioc_description: "Target IP"
+    ioc_tlp_id: 2
+    ioc_type_id: 79
+    ioc_tags: "ip-dst, victim"
